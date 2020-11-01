@@ -1,1 +1,1 @@
-# Study-weight-loss-drug-fexaramine-and-liver-function-in-mice
+# Study weight loss drug fexaramine and its effect on liver function in mice
