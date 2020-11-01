@@ -1,0 +1,279 @@
+---
+title: "Can weight loss drug fexaramine improve liver function?"
+author: "Preeti Pathak and Bilal zonjy"
+date: "Due 2017-09-15 at noon. Generated `r Sys.Date()`"
+output:
+  html_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+  word_document:
+    toc: yes
+---
+
+
+```{r setup R to load needed libraries, message=FALSE}
+knitr::opts_chunk$set(comment=NA)
+options(width = 70)
+
+library(MASS); library(tidyverse)
+## make sure these libraries are installed in R
+```
+
+
+# Research question
+Research question-: We want to evaluate if  serum bile acids are correlated with weight loss, which is induced by the drug fexaramine in mice.
+
+Title-: Can weight loss drug fexaramine improve liver function?
+
+Study design-: male(n=120) and female (n=120) mice were fed with western diet for 2 months, which made them fat. Later this fat mice were orally treated with different dosage of fexaramine for 2 months. Body weight , Fat-mass, serum bile acids were measured and mice were sacrificed after two months of experiment.
+Higer concentration of fexaramine (80mg/Kg/day)show side effects in some animals. Sick animals were excuded from the study. We have total n=210 mice (female n=105 and male n=105) data after clean up. 
+
+# Code book 
+Code book
+Name of columns       	Type of variable	          Type of variable
+-------------------------------------------------------------------------
+BW	                    Body weight (gram)	      Continuous variable
+FM	                    Fat mass(gram)	          Continuous variable
+dose	                  Mg/Kg	                    Continuous variable
+Serum_BA	              Serum bile acid in µM	    Continuous variable
+Nash_score	            No-Nash	: score=1
+                        Onset-Nash: score=2
+                        moderate-Nash: score=3
+                        severe-Nash: score=4	    Categorical variable
+gender	                M-Male , F-Female	        Categorical variable
+--------------------------------------------------------------------------
+
+
+#Analysis
+
+```{r}
+library(tidyverse)
+library(broom)
+library(magrittr)
+library(car)
+library(pander)
+library(mosaic)
+```
+
+```{r}
+taskD<-read_csv("taskD.csv")
+taskD
+```
+
+```{r}
+pander(by(taskD$BW,taskD$Gender, mosaic::favstats))
+pander(by(taskD$serum_BA, taskD$Gender, mosaic::favstats))
+pander(by(taskD$Nash_score, taskD$Gender, mosaic::favstats))
+```
+
+
+```{r}
+source("Love-boost.R")
+pairs(~serum_BA+BW+FM+dose+Nash_score, data=taskD,
+      main= "Scatter plot of fexaramine treatment",
+      upper.panel= panel.smooth,
+      diag.panel= panel.hist,
+      lower.panel= panel.cor)
+```
+# Kitchen sink model
+
+```{r}
+BA_weightloss<-lm(serum_BA~BW+FM+Gender+dose+factor(Nash_score), data=taskD)
+```
+
+
+```{r}
+summary(BA_weightloss)
+```
+
+```{r}
+par(mfrow = c(2, 2))
+plot(BA_weightloss)
+```
+```{r}
+BA_weightloss1<- step(BA_weightloss)
+```
+```{r}
+pander(summary(BA_weightloss1), caption = "Summary of Stepwise model", digits = 3)
+```
+
+```{r}
+car::vif(BA_weightloss)
+```
+
+Initial kitchen model has an evident problem of linearity and collinearity (GVIF values more than 5) . Linearity is a major assumption to build a linear regression model. we considered  the  transformation of outcome variable, which might help to increase linearity in the kitchen sink model. 
+
+# Transformation of kitchen sink model
+
+```{r}
+boxCox(BA_weightloss)
+```
+Since,  the confidence interval is near zero, we choose to log transform the model.
+
+```{r}
+BA_weightloss_trans<-lm(log(serum_BA)~BW+FM+Gender+dose+factor(Nash_score), data=taskD)
+```
+
+```{r}
+glance(BA_weightloss_trans)
+```
+```{r}
+summary(BA_weightloss_trans)
+```
+```{r}
+par(mfrow = c(2, 2))
+plot(BA_weightloss_trans)
+```
+```{r}
+powerTransform(lm(serum_BA~BW+Gender+dose+factor(Nash_score), data=taskD))
+```
+The transformation of the model did not improve linearity effectively. After power transformation we observed power of -0.25. Therefore, we tried to inverse of output (serum bile acids)
+
+```{r}
+BA_weightloss_trans2<-lm(1/(serum_BA)~BW+FM+Gender+dose+factor(Nash_score), data=taskD)
+```
+
+```{r}
+summary(BA_weightloss_trans2)
+```
+Inverse of output reduced the R2 values compared to kitchen sink. 
+
+```{r}
+par(mfrow = c(2, 2))
+plot(BA_weightloss_trans2)
+```
+Inverse of output helped to increase linearity but increase non equal variance ( fan shaped in the  residual plot) and reduced the normality. 
+
+```{r}
+AIC(BA_weightloss_trans,BA_weightloss_trans2)
+```
+```{r}
+BIC(BA_weightloss_trans,BA_weightloss_trans2)
+```
+```{r}
+select(glance(BA_weightloss_trans), r.squared, adj.r.squared, AIC, BIC)
+```
+```{r}
+select(glance(BA_weightloss_trans2), r.squared, adj.r.squared, AIC, BIC)
+```
+
+Both BA_weightloss_trans-:log(output)-     non linear, better R2, AIC, BIC values. 
+BA_weightloss_trans2-:    1/(output)-      linear, worsen R2, lower AIC,BIC values
+
+According to our knowledge, inverse of output has a problem with equal Variance (fan shaped plot in BA_weightloss_trans2 plot) and normality, while there is no evident curve in the residual plot showing linearity problem has been reduced. 
+
+It was another hard decision which transformation is best for the out-put. Although there is a problem with non-linearity we decided log transformation may be better to predict output based on higher  adjusted R2, lower AIC and BIC values.
+
+
+
+# Model selection
+.	How to deal with the problem with collinearity and linearity? We found a paper 
+.	 Identification of Body Fat Mass as a Major Determinant of Metabolic Rate in Mice
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2889765/
+Diabetes. 2010 Jul; 59(7): 1657-1666.
+  Above paper mentioned that it is wise to take (fat mass/ body weight ratio) as a predictor. we were wondering if ratio will help us to improve linearity. 
+
+```{r}
+BA_ratio<-lm(serum_BA~Ratio+Gender+dose+factor(Nash_score), data=taskD)
+```
+
+```{r}
+summary(BA_ratio)
+```
+
+
+
+```{r}
+car::vif(BA_ratio)
+```
+
+```{r}
+par(mfrow = c(2, 2))
+plot(BA_ratio)
+```
+
+
+```{r}
+boxCox(lm(serum_BA~Ratio+Gender+dose+factor(Nash_score), data=taskD))
+```
+```{r}
+BA_ratio1<-lm(log(serum_BA)~Ratio+Gender+dose+factor(Nash_score), data=taskD)
+```
+
+```{r}
+par(mfrow = c(2, 2))
+plot(BA_ratio1)
+```
+
+```{r}
+summary(BA_ratio1)
+```
+```{r}
+AIC(BA_ratio1)
+```
+
+```{r}
+BIC(BA_ratio1)
+```
+
+```{r}
+car::vif(BA_ratio1)
+```
+Overall, Ratio(Fat mass/Bodyweight) improved R2 values compared to kitchen sink reduced VIF values but did not improve linearity.
+```{r}
+select(glance(BA_weightloss_trans), r.squared, adj.r.squared, AIC, BIC)
+```
+```{r}
+select(glance(BA_ratio1), r.squared, adj.r.squared, AIC, BIC)
+```
+
+```{r}
+anova(BA_weightloss_trans, BA_ratio1)
+```
+According to the anova kitchen sink model is still better. it is very hard decision which model will be our final model. Although both models show problem with linearity, according to our interpretation and knowledge we want to believe published results(Diabetes. 2010 Jul; 59(7): 1657-1666). Therefore, we decided to go with ratio (fat mass/ body weight), which at least reduced collinearity, improved R2, has no evident problem with equal variance and normality.However linearity is a persistent problem which we could not solved.  
+
+# Final model summary
+
+```{r}
+summary(BA_ratio1)
+```
+
+
+```{r}
+select(glance(BA_ratio1), r.squared, adj.r.squared, AIC, BIC)
+```
+```{r}
+car::vif(BA_ratio1)
+```
+
+
+```{r}
+car::vif(BA_weightloss_trans)
+```
+
+#  Results
+
+Coefficients of the final model 
+
+log(Serum bile acids)= -0.99-(0.635)Ratio-(0.46)male+(0.03)dose+(0.40)Nash-2+(0.40)Nash-3+(0.81)Nash-4
+
+
+Weight loss drug fexaramine increased serum bile acids. The effect of the drug is gender specific and increased in the female. Surprisingly, Nonalcoholic steatohepatitis (NASH) induce serum bile acids. Therefore, it is difficult to understand if serum bile acid increase is helpful for the weight loss alone. Overall, increase serum bile acids alone may linearly correlated with weight loss in this study.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
